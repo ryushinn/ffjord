@@ -85,7 +85,7 @@ if __name__ == "__main__":
         alpha=args.alpha,
     )
 
-    print(model)
+    model = cvt(model)
     
     # training preconfig
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
