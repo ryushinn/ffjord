@@ -102,7 +102,7 @@ if __name__ == "__main__":
     os.makedirs(ws_path, exist_ok=True)
 
     read_tforms = [
-        tforms.RandomCrop(128),
+        tforms.RandomCrop(32),
         tforms.ConvertImageDtype(torch.float32),
     ]
 
@@ -118,19 +118,22 @@ if __name__ == "__main__":
 
     exemplar = cvt(exemplar)
     data_shape = exemplar.size()
+    numel = exemplar.numel()
     exemplar = torch.unsqueeze(exemplar, 0)  # add the batch dim
 
     # model
 
     # model = odenvp.ODENVP(
-    #     (args.batchsize, *data_shape),
+    #     (args.batchsize, numel),
     #     n_blocks=args.num_blocks,
     #     intermediate_dims=args.dims,
     #     nonlinearity=args.nonlinearity,
     #     alpha=args.alpha,
     # )
     def make_ODETexture():
-        odefunc = net.ODENet(args.dims, data_shape, args.strides, args.nonlinearity)
+        odefunc = net.ODELinearNet(
+            args.dims, numel, args.nonlinearity
+        )
         return net.ODETexture(
             odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
         )
@@ -153,7 +156,7 @@ if __name__ == "__main__":
     loss_meter = utils.RunningAverageMeter(0.97)
 
     n_test_tex = 1
-    test_noise = torch.randn(n_test_tex, *data_shape, device=device)
+    test_noise = torch.randn(n_test_tex, numel, device=device)
 
     # training procedure
     with tqdm(total=args.num_epochs, desc="Epoch") as t:
@@ -162,8 +165,8 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             ## generate some textures
-            noise = torch.randn(args.batchsize, *data_shape, device=device)
-            generated_textures = model(noise)
+            noise = torch.randn(args.batchsize, numel, device=device)
+            generated_textures = model(noise).view(-1, *data_shape)
 
             ## compute gram matrices
             gmatrices_samples = list(
@@ -184,7 +187,7 @@ if __name__ == "__main__":
             if ep % args.num_disp_epochs == 0:
                 with torch.no_grad():
                     model.eval()
-                    tex = model(test_noise).to("cpu")
+                    tex = model(test_noise).view(-1, *data_shape)
                     for i in range(n_test_tex):
                         tvio.write_png(
                             tforms.ConvertImageDtype(torch.uint8)(tex[i]),

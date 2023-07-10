@@ -27,7 +27,7 @@ class ConcatConv2d(nn.Module):
         ttx = torch.cat([tt, x], 1)
         return self._layer(ttx)
 
-class ODENet(nn.Module):
+class ODEConvNet(nn.Module):
 
     """
     Convolutional ODE Net that defines the dynamics of image noise
@@ -35,7 +35,7 @@ class ODENet(nn.Module):
 
     def __init__(
         self, hidden_dims, input_shape, strides, nonlinearity="softplus"):
-        super(ODENet, self).__init__()
+        super(ODEConvNet, self).__init__()
 
         assert len(strides) == len(hidden_dims) + 1
         base_layer = ConcatConv2d 
@@ -125,3 +125,54 @@ class SigmoidTransform(nn.Module):
 def _sigmoid(x, alpha):
     y = (torch.sigmoid(x) - alpha) / (1 - alpha)
     return y
+
+class ConcatLinear(nn.Module):
+    def __init__(self, dim_in, dim_out):
+        super(ConcatLinear, self).__init__()
+        self._layer = nn.Linear(dim_in + 1, dim_out)
+
+    def forward(self, t, x):
+        tt = torch.ones_like(x[:, :1]) * t
+        ttx = torch.cat([tt, x], 1)
+        return self._layer(ttx)
+    
+class ODELinearNet(nn.Module):
+
+    """
+    Convolutional ODE Net that defines the dynamics of image noise
+    """
+
+    def __init__(
+        self, hidden_dims, input_shape, nonlinearity="softplus"):
+        super(ODELinearNet, self).__init__()
+
+        base_layer = ConcatLinear 
+
+        # build layers and add them
+        layers = []
+        activation_fns = []
+        hidden_shape = input_shape
+
+        for dim_out in hidden_dims + (input_shape,):
+            layer = base_layer(hidden_shape, dim_out)
+            layers.append(layer)
+            activation_fns.append(NONLINEARITIES[nonlinearity])
+
+            hidden_shape = dim_out
+        
+        # zero init the last layer to make ode identity
+        with torch.no_grad():
+            for param in layers[-1].parameters():
+                nn.init.zeros_(param)
+        
+        self.layers = nn.ModuleList(layers)
+        self.activation_fns = nn.ModuleList(activation_fns[:-1])
+
+    def forward(self, t, y):
+        dx = y
+        for l, layer in enumerate(self.layers):
+            dx = layer(t, dx)
+            # if not last layer, use nonlinearity
+            if l < len(self.layers) - 1:
+                dx = self.activation_fns[l](dx)
+        return dx
