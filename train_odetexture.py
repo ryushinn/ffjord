@@ -181,7 +181,7 @@ if __name__ == "__main__":
             if ep % args.num_disp_epochs == 0:
                 with torch.no_grad():
                     model.eval()
-                    tex = model(test_noise)
+                    tex = model(test_noise).to('cpu')
                     for i in range(n_test_tex):
                         # TODO: match histogram...
                         normalized = (tex[i] - tex[i].min()) / (
