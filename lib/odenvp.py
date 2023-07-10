@@ -8,7 +8,7 @@ import numpy as np
 class ODENVP(nn.Module):
     """
     Real NVP for image data. Will downsample the input until one of the
-    dimensions is less than or equal to 4.
+    dimensions is less than 4.
 
     Args:
         input_size (tuple): 4D tuple of the input size.

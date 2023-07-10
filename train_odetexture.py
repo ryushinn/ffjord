@@ -1,9 +1,12 @@
 import argparse
 import os
 import time
+from datetime import datetime
 import random
 import numpy as np
 
+import os.path as opath
+import copy
 import torch
 import torch.optim as optim
 import torchvision.io as tvio
@@ -45,7 +48,10 @@ parser.add_argument("--alpha", type=float, default=1e-6)
 parser.add_argument("--num_epochs", type=int, default=1000)
 parser.add_argument("--num_disp_epochs", type=int, default=10)
 parser.add_argument("--batchsize", type=int, default=10)
-parser.add_argument("--lr", type=float, default=1e-3)
+parser.add_argument("--lr", type=float, default=1e-4)
+
+parser.add_argument("--exemplar_path", type=str)
+parser.add_argument("--exp_path", type=str)
 
 # args
 args = parser.parse_args()
@@ -70,13 +76,34 @@ if __name__ == "__main__":
     seed_all(42)
 
     # data
-    exemplar = tforms.ConvertImageDtype(torch.float32)(tvio.read_image("grass_example_1.jpg"))
-    exemplar = tforms.CenterCrop(32)(exemplar)
-    tvio.write_png(tforms.ConvertImageDtype(torch.uint8)(exemplar), "cropped_exemplar.png")
+    if not opath.exists(args.exemplar_path):
+        raise ValueError(f"There is not file in {args.exemplar_path}")
+    
+    ## create workspace to store results
+    workspace = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    ws_path = opath.join(args.exp_path, workspace)
+    os.makedirs(ws_path, exist_ok=True)
+    
+    read_tforms = [
+        tforms.RandomCrop(128),
+        tforms.ConvertImageDtype(torch.float32),
+    ]
+
+    exemplar = tvio.read_image(args.exemplar_path)
+    for tform in read_tforms:
+        exemplar = tform(exemplar)
+
+    ## write transformed exemplar 
+    tvio.write_png(
+        tforms.ConvertImageDtype(torch.uint8)(exemplar),
+        opath.join(ws_path, "exemplar.png")
+    )
+
     exemplar = cvt(exemplar)
+    data_shape = exemplar.size()
+    exemplar = torch.unsqueeze(exemplar, 0) # add the batch dim
 
     # model
-    data_shape = exemplar.size()
     model = odenvp.ODENVP(
         (args.batchsize, *data_shape),
         n_blocks=args.num_blocks,
@@ -88,9 +115,14 @@ if __name__ == "__main__":
     model = cvt(model)
     
     # training preconfig
+
+    ## VGG features
+    features = metrics.VGGFeatures().to(device)
+    gmatrices_exemplar = list(map(metrics.GramMatrix, features(exemplar)))
+    loss_fn = torch.nn.MSELoss(reduction='mean')
+
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     loss_meter = utils.RunningAverageMeter(0.97)
-    exemplar = torch.unsqueeze(exemplar, 0) # add the batch dim
 
     n_test_tex = 1
     test_noise = torch.randn(n_test_tex, *data_shape, device=device)
@@ -104,9 +136,15 @@ if __name__ == "__main__":
             ## generate some textures
             noise = torch.randn(args.batchsize, *data_shape, device=device)
             generated_textures = model(noise, reverse=True).view(-1, *data_shape)
+
+            ## compute gram matrices
+            gmatrices_samples = list(map(metrics.GramMatrix, features(generated_textures)))
             
             ## compute the gradients
-            loss = metrics.VGGLoss(exemplar, generated_textures)
+            loss = 0.0
+            for gmatrix_e, gmatrix_s in zip(gmatrices_exemplar, gmatrices_samples):
+                loss += loss_fn(gmatrix_e, gmatrix_s)
+
             loss.backward()
 
             optimizer.step()
@@ -118,11 +156,14 @@ if __name__ == "__main__":
                     model.eval()
                     tex = model(test_noise, reverse=True).view(-1, *data_shape).to("cpu")
                     for i in range(n_test_tex):
-                        remapped = (tex[i] - tex[i].min())/(tex[i].max() - tex[i].min())
+                        # TODO: match histogram...
+                        normalized = (tex[i] - tex[i].min())/(tex[i].max() - tex[i].min())
                         tvio.write_png(
-                            tforms.ConvertImageDtype(torch.uint8)(remapped),
-                            f"tex_{ep}_{i}.png"
+                            tforms.ConvertImageDtype(torch.uint8)(normalized),
+                            opath.join(ws_path, f"tex_{ep}_{i}.png")
                         )
+
+                torch.save(copy.deepcopy(model.state_dict()), opath.join(ws_path, f"model_checkpoint.pth"))
 
             t.set_postfix({"running_loss": f"{loss_meter.avg}"})
             t.update()

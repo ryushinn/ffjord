@@ -63,26 +63,3 @@ def GramMatrix(input):
 
     gram_matrix.div_(h * w)
     return gram_matrix
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-__features = VGGFeatures().to(device)
-__gmatrices_exemplar = {}
-
-def VGGLoss(exemplar, y):
-    if exemplar not in __gmatrices_exemplar:
-        features_e = __features(exemplar)
-        gmatrices_e = list(map(GramMatrix, features_e))
-        __gmatrices_exemplar[exemplar] = gmatrices_e
-
-    features_y = __features(y)
-    gmatrices_y = list(map(GramMatrix, features_y))
-    gmatrices_e = __gmatrices_exemplar[exemplar]
-
-    loss = 0.0
-    for gmatrix_e, gmatrix_y in zip(gmatrices_e, gmatrices_y):
-        loss += ((gmatrix_e - gmatrix_y) ** 2).mean()
-
-    return loss
-
-def MSELoss(exemplar, y):
-    return ((exemplar - y)**2).mean()
