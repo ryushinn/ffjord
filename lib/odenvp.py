@@ -119,7 +119,9 @@ class ODENVP(nn.Module):
         return out if logpx is None else (out, _logpx)
 
     def _generate(self, z, logpz=None):
+        print(z.size())
         z = z.view(z.shape[0], -1)
+        print(z.size())
         zs = []
         i = 0
         for dims in self.dims:
@@ -127,6 +129,7 @@ class ODENVP(nn.Module):
             zs.append(z[:, i:i + s])
             i += s
         zs = [_z.view(_z.size()[0], *zsize) for _z, zsize in zip(zs, self.dims)]
+        print([_.size() for _ in zs])
         _logpz = torch.zeros(zs[0].shape[0], 1).to(zs[0]) if logpz is None else logpz
         z_prev, _logpz = self.transforms[-1](zs[-1], _logpz, reverse=True)
         for idx in range(len(self.transforms) - 2, -1, -1):
