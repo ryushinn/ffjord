@@ -135,7 +135,10 @@ if __name__ == "__main__":
             odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
         )
 
-    model = nn.Sequential(*[make_ODETexture() for _ in range(args.num_blocks)]) 
+    model = nn.Sequential(
+        *[make_ODETexture() for _ in range(args.num_blocks)],
+        net.SigmoidTransform(args.alpha),
+    )
 
     model = cvt(model)
 
@@ -181,14 +184,10 @@ if __name__ == "__main__":
             if ep % args.num_disp_epochs == 0:
                 with torch.no_grad():
                     model.eval()
-                    tex = model(test_noise).to('cpu')
+                    tex = model(test_noise).to("cpu")
                     for i in range(n_test_tex):
-                        # TODO: match histogram...
-                        normalized = (tex[i] - tex[i].min()) / (
-                            tex[i].max() - tex[i].min()
-                        )
                         tvio.write_png(
-                            tforms.ConvertImageDtype(torch.uint8)(normalized),
+                            tforms.ConvertImageDtype(torch.uint8)(tex[i]),
                             opath.join(ws_path, f"tex_{ep}_{i}.png"),
                         )
 

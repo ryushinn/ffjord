@@ -111,3 +111,17 @@ class ODETexture(nn.Module):
         )
 
         return y_T[1]
+
+class SigmoidTransform(nn.Module):
+    """Reverse of LogitTransform."""
+
+    def __init__(self, alpha):
+        nn.Module.__init__(self)
+        self.alpha = alpha
+
+    def forward(self, x):
+        return _sigmoid(x, self.alpha)
+
+def _sigmoid(x, alpha):
+    y = (torch.sigmoid(x) - alpha) / (1 - alpha)
+    return y
