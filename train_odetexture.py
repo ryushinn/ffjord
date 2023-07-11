@@ -102,7 +102,7 @@ if __name__ == "__main__":
     os.makedirs(ws_path, exist_ok=True)
 
     read_tforms = [
-        tforms.RandomCrop(128),
+        # tforms.RandomCrop(128),
         tforms.ConvertImageDtype(torch.float32),
     ]
 
@@ -152,8 +152,8 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     loss_meter = utils.RunningAverageMeter(0.97)
 
-    n_test_tex = 1
-    test_noise = torch.randn(n_test_tex, *data_shape, device=device)
+    n_test_tex = 3
+    test_noise = torch.randn(n_test_tex, 3, 512, 512, device=device)
 
     # training procedure
     with tqdm(total=args.num_epochs, desc="Epoch") as t:
@@ -162,7 +162,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             ## generate some textures
-            noise = torch.randn(args.batchsize, *data_shape, device=device)
+            noise = torch.randn(args.batchsize, 3, 128, 128, device=device)
             generated_textures = model(noise)
 
             ## compute gram matrices
