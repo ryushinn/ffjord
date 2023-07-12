@@ -13,13 +13,31 @@ NONLINEARITIES = {
     "elu": nn.ELU(),
 }
 
+
 class ConcatConv2d(nn.Module):
-    def __init__(self, dim_in, dim_out, ksize=3, stride=1, padding=0, dilation=1, groups=1, bias=True, transpose=False):
+    def __init__(
+        self,
+        dim_in,
+        dim_out,
+        ksize=3,
+        stride=1,
+        padding=0,
+        dilation=1,
+        groups=1,
+        bias=True,
+        transpose=False,
+    ):
         super(ConcatConv2d, self).__init__()
         module = nn.ConvTranspose2d if transpose else nn.Conv2d
         self._layer = module(
-            dim_in + 1, dim_out, kernel_size=ksize, stride=stride, padding=padding, dilation=dilation, groups=groups,
-            bias=bias
+            dim_in + 1,
+            dim_out,
+            kernel_size=ksize,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
+            bias=bias,
         )
 
     def forward(self, t, x):
@@ -27,18 +45,32 @@ class ConcatConv2d(nn.Module):
         ttx = torch.cat([tt, x], 1)
         return self._layer(ttx)
 
+
+def make_layer(dim_in, dim_out, stride):
+    if stride is None:
+        layer_kwargs = {}
+    elif stride == 1:
+        layer_kwargs = {"ksize": 3, "stride": 1, "padding": 1, "transpose": False}
+    elif stride == 2:
+        layer_kwargs = {"ksize": 4, "stride": 2, "padding": 1, "transpose": False}
+    elif stride == -2:
+        layer_kwargs = {"ksize": 4, "stride": 2, "padding": 1, "transpose": True}
+    else:
+        raise ValueError("Unsupported stride: {}".format(stride))
+
+    return ConcatConv2d(dim_in, dim_out, **layer_kwargs)
+
+
 class ODENet(nn.Module):
 
     """
     Convolutional ODE Net that defines the dynamics of image noise
     """
 
-    def __init__(
-        self, hidden_dims, input_shape, strides, nonlinearity="softplus"):
+    def __init__(self, hidden_dims, input_shape, strides, nonlinearity="softplus"):
         super(ODENet, self).__init__()
 
         assert len(strides) == len(hidden_dims) + 1
-        base_layer = ConcatConv2d 
 
         # build layers and add them
         layers = []
@@ -46,33 +78,27 @@ class ODENet(nn.Module):
         hidden_shape = input_shape
 
         for dim_out, stride in zip(hidden_dims + (input_shape[0],), strides):
-            if stride is None:
-                layer_kwargs = {}
-            elif stride == 1:
-                layer_kwargs = {"ksize": 3, "stride": 1, "padding": 1, "transpose": False}
-            elif stride == 2:
-                layer_kwargs = {"ksize": 4, "stride": 2, "padding": 1, "transpose": False}
-            elif stride == -2:
-                layer_kwargs = {"ksize": 4, "stride": 2, "padding": 1, "transpose": True}
-            else:
-                raise ValueError('Unsupported stride: {}'.format(stride))
-
-            layer = base_layer(hidden_shape[0], dim_out, **layer_kwargs)
-            layers.append(layer)
+            layers.append(make_layer(hidden_dims[0], dim_out, stride))
             activation_fns.append(NONLINEARITIES[nonlinearity])
 
             hidden_shape = list(copy.copy(hidden_shape))
             hidden_shape[0] = dim_out
             if stride == 2:
-                hidden_shape[1], hidden_shape[2] = hidden_shape[1] // 2, hidden_shape[2] // 2
+                hidden_shape[1], hidden_shape[2] = (
+                    hidden_shape[1] // 2,
+                    hidden_shape[2] // 2,
+                )
             elif stride == -2:
-                hidden_shape[1], hidden_shape[2] = hidden_shape[1] * 2, hidden_shape[2] * 2
+                hidden_shape[1], hidden_shape[2] = (
+                    hidden_shape[1] * 2,
+                    hidden_shape[2] * 2,
+                )
 
         # zero init the last layer to make ode identity
         with torch.no_grad():
             for param in layers[-1].parameters():
                 nn.init.zeros_(param)
-        
+
         self.layers = nn.ModuleList(layers)
         self.activation_fns = nn.ModuleList(activation_fns[:-1])
 
@@ -85,6 +111,7 @@ class ODENet(nn.Module):
                 dx = self.activation_fns[l](dx)
         return dx
 
+
 class ODETexture(nn.Module):
     def __init__(self, odefunc, T=1.0, solver="dopri5", atol=1e-5, rtol=1e-5) -> None:
         super(ODETexture, self).__init__()
@@ -96,21 +123,23 @@ class ODETexture(nn.Module):
         self.rtol = rtol
 
     def forward(self, y, T=None):
-
-        if T is None: T = self.T
+        if T is None:
+            T = self.T
         assert T > 0, "The end time should be large than 0"
 
         integration_T = torch.tensor([0.0, T]).to(y)
 
         y_T = odeint(
             self.odefunc,
-            y, integration_T,
+            y,
+            integration_T,
             rtol=self.rtol,
             atol=self.atol,
             method=self.solver,
         )
 
         return y_T[1]
+
 
 class SigmoidTransform(nn.Module):
     """Reverse of LogitTransform."""
@@ -122,6 +151,56 @@ class SigmoidTransform(nn.Module):
     def forward(self, x):
         return _sigmoid(x, self.alpha)
 
+
 def _sigmoid(x, alpha):
     y = (torch.sigmoid(x) - alpha) / (1 - alpha)
     return y
+
+
+class ODEUNet(nn.Module):
+    def __init__(
+        self, 
+        init_dim: int, 
+        dims: list[int], 
+        strides: list[int], 
+        nonlinearity: str="softplus"
+    ):
+        super(ODEUNet, self).__init__()
+
+        assert len(dims) == len(strides)
+        assert all([s > 0 for s in strides])
+
+        self.activation = NONLINEARITIES[nonlinearity]
+
+        layers = []
+        dims = dims + list(reversed(dims)) + [init_dim, ]
+        strides = strides + [1, ] + \
+            [s if s==1 else -s for s in reversed(strides)]
+        
+        dim_in = init_dim
+        for dim_out, stride in zip(dims, strides):
+            layers.append(make_layer(dim_in, dim_out, stride))
+            dim_in = dim_out
+            if stride == -2:
+                dim_in *= 2
+        
+        self.init_dim = init_dim
+        self.dims = dims
+        self.strides = strides
+        self.layers = nn.ModuleList(layers)
+
+    def forward(self, t, x):
+        
+        left_concat = []
+        for i, layer in enumerate(self.layers):
+            if self.strides[i] == 2:
+                left_concat.append(x)
+            
+            x = layer(t, x)
+            x = self.activation(x)
+
+            if self.strides[i] == -2:
+                left = left_concat.pop(-1)
+                x = torch.concatenate([x, left], dim=1)
+                
+        return x

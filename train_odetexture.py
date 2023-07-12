@@ -32,7 +32,7 @@ parser.add_argument("--solver", type=str, default="dopri5", choices=SOLVERS)
 parser.add_argument("--atol", type=float, default=1e-5)
 parser.add_argument("--rtol", type=float, default=1e-5)
 
-_converter = lambda s: tuple(map(int, s.split(",")))
+_converter = lambda s: list(map(int, s.split(",")))
 parser.add_argument("--dims", type=_converter, default="8,32,32,8")
 parser.add_argument("--strides", type=_converter, default="2,2,1,-2,-2")
 parser.add_argument("--num_blocks", type=int, default=1, help="Number of stacked CNFs.")
@@ -129,15 +129,26 @@ if __name__ == "__main__":
     #     nonlinearity=args.nonlinearity,
     #     alpha=args.alpha,
     # )
-    def make_ODETexture():
-        odefunc = net.ODENet(args.dims, data_shape, args.strides, args.nonlinearity)
-        return net.ODETexture(
-            odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
-        )
+
+    # def make_ODETexture():
+    #     odefunc = net.ODENet(args.dims, data_shape, args.strides, args.nonlinearity)
+    #     return net.ODETexture(
+    #         odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
+    #     )
+
+    # model = nn.Sequential(
+    #     *[make_ODETexture() for _ in range(args.num_blocks)],
+    #     net.SigmoidTransform(args.alpha),
+    # )
+
+    odefunc = net.ODEUNet(data_shape[0], args.dims, args.strides, args.nonlinearity)
+    odetexture = net.ODETexture(
+        odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
+    )
 
     model = nn.Sequential(
-        *[make_ODETexture() for _ in range(args.num_blocks)],
-        net.SigmoidTransform(args.alpha),
+        odetexture,
+        net.SigmoidTransform(args.alpha)
     )
 
     model = cvt(model)
