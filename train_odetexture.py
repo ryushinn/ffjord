@@ -145,8 +145,7 @@ if __name__ == "__main__":
     # training preconfig
 
     ## VGG features
-    features = metrics.VGG19().to(device)
-    features.load_state_dict(torch.load("vgg19.pth"))
+    features = metrics.VGGFeatures().to(device)
     gmatrices_exemplar = list(map(metrics.GramMatrix, features(exemplar)))
     loss_fn = nn.MSELoss(reduction="mean")
 
