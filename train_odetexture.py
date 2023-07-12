@@ -129,14 +129,14 @@ if __name__ == "__main__":
     #     nonlinearity=args.nonlinearity,
     #     alpha=args.alpha,
     # )
-    def make_ODETexture():
-        odefunc = net.ODENet(args.dims, data_shape, args.strides, args.nonlinearity)
+    def make_ODETexture(init_dim):
+        odefunc = net.ODENet(args.dims, init_dim, args.strides, args.nonlinearity)
         return net.ODETexture(
             odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
         )
 
     model = nn.Sequential(
-        *[make_ODETexture() for _ in range(args.num_blocks)],
+        *[make_ODETexture(data_shape[0]) for _ in range(args.num_blocks)],
         net.SigmoidTransform(args.alpha),
     )
 

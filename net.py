@@ -34,7 +34,7 @@ class ODENet(nn.Module):
     """
 
     def __init__(
-        self, hidden_dims, input_shape, strides, nonlinearity="softplus"):
+        self, hidden_dims, init_dim, strides, nonlinearity="softplus"):
         super(ODENet, self).__init__()
 
         assert len(strides) == len(hidden_dims) + 1
@@ -43,9 +43,9 @@ class ODENet(nn.Module):
         # build layers and add them
         layers = []
         activation_fns = []
-        hidden_shape = input_shape
+        hidden_shape = init_dim
 
-        for dim_out, stride in zip(hidden_dims + (input_shape[0],), strides):
+        for dim_out, stride in zip(hidden_dims + (init_dim,), strides):
             if stride is None:
                 layer_kwargs = {}
             elif stride == 1:
@@ -57,16 +57,11 @@ class ODENet(nn.Module):
             else:
                 raise ValueError('Unsupported stride: {}'.format(stride))
 
-            layer = base_layer(hidden_shape[0], dim_out, **layer_kwargs)
+            layer = base_layer(hidden_shape, dim_out, **layer_kwargs)
             layers.append(layer)
             activation_fns.append(NONLINEARITIES[nonlinearity])
 
-            hidden_shape = list(copy.copy(hidden_shape))
-            hidden_shape[0] = dim_out
-            if stride == 2:
-                hidden_shape[1], hidden_shape[2] = hidden_shape[1] // 2, hidden_shape[2] // 2
-            elif stride == -2:
-                hidden_shape[1], hidden_shape[2] = hidden_shape[1] * 2, hidden_shape[2] * 2
+            hidden_shape = dim_out
 
         # zero init the last layer to make ode identity
         with torch.no_grad():
