@@ -162,7 +162,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             ## generate some textures
-            noise = torch.randn(args.batchsize, 3, 128, 128, device=device)
+            noise = torch.randn(args.batchsize, 3, 256, 256, device=device)
             generated_textures = model(noise)
 
             ## compute gram matrices
