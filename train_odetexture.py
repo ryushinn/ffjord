@@ -122,23 +122,23 @@ if __name__ == "__main__":
 
     # model
 
-    # model = odenvp.ODENVP(
-    #     (args.batchsize, *data_shape),
-    #     n_blocks=args.num_blocks,
-    #     intermediate_dims=args.dims,
-    #     nonlinearity=args.nonlinearity,
-    #     alpha=args.alpha,
-    # )
-    def make_ODETexture():
-        odefunc = net.ODENet(args.dims, data_shape, args.strides, args.nonlinearity)
-        return net.ODETexture(
-            odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
-        )
-
-    model = nn.Sequential(
-        *[make_ODETexture() for _ in range(args.num_blocks)],
-        net.SigmoidTransform(args.alpha),
+    model = odenvp.ODENVP(
+        (args.batchsize, 3, 128, 128),
+        n_blocks=args.num_blocks,
+        intermediate_dims=args.dims,
+        nonlinearity=args.nonlinearity,
+        alpha=args.alpha,
     )
+    # def make_ODETexture():
+    #     odefunc = net.ODENet(args.dims, data_shape, args.strides, args.nonlinearity)
+    #     return net.ODETexture(
+    #         odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
+    #     )
+
+    # model = nn.Sequential(
+    #     *[make_ODETexture() for _ in range(args.num_blocks)],
+    #     net.SigmoidTransform(args.alpha),
+    # )
 
     model = cvt(model)
 
