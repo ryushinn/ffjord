@@ -135,8 +135,25 @@ if __name__ == "__main__":
             odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
         )
 
+    # model = nn.Sequential(
+    #     *[make_ODETexture(data_shape[0]) for _ in range(args.num_blocks)],
+    #     net.SigmoidTransform(args.alpha),
+    # )
+    
+    init_dim = data_shape[0]
+    layers = []
+    for _ in range(args.num_blocks):
+        layers.append(make_ODETexture(init_dim))
+        layers.append(net.SqueezeLayer(2))
+        init_dim *= 2 * 2
+    
+    for _ in range(args.num_blocks):
+        layers.append(make_ODETexture(init_dim))
+        layers.append(net.UnsqueezeLayer(2))
+        init_dim //= 2 * 2
+    
     model = nn.Sequential(
-        *[make_ODETexture(data_shape[0]) for _ in range(args.num_blocks)],
+        *layers,
         net.SigmoidTransform(args.alpha),
     )
 
