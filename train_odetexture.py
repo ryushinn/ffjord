@@ -132,20 +132,25 @@ if __name__ == "__main__":
     #     nonlinearity=args.nonlinearity,
     #     alpha=args.alpha,
     # )
-    def make_ODETexture(init_dim):
-        odefunc = net.HiddenUnits(
-            [
-                net.ODENet(args.dims, init_dim, args.strides, args.nonlinearity)
-                for _ in range(args.num_units)
-            ]
-        )
-        return net.ODETexture(
-            odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
-        )
+    # def make_ODETexture(init_dim):
+    #     odefunc = net.HiddenUnits(
+    #         [
+    #             net.ODENet(args.dims, init_dim, args.strides, args.nonlinearity)
+    #             for _ in range(args.num_units)
+    #         ]
+    #     )
+    #     return net.ODETexture(
+    #         odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
+    #     )
+
+    # model = nn.Sequential(
+    #     *[make_ODETexture(data_shape[0]) for _ in range(args.num_blocks)],
+    #     net.SigmoidTransform(args.alpha),
+    # )
 
     model = nn.Sequential(
-        *[make_ODETexture(data_shape[0]) for _ in range(args.num_blocks)],
-        net.SigmoidTransform(args.alpha),
+        net.ConvNet(args.dims, data_shape[0], args.strides, args.nonlinearity),
+        net.SigmoidTransform(args.alpha)
     )
 
     model = cvt(model)

@@ -27,6 +27,61 @@ class ConcatConv2d(nn.Module):
         ttx = torch.cat([tt, x], 1)
         return self._layer(ttx)
 
+class Conv2d(nn.Module):
+    def __init__(self, dim_in, dim_out, ksize=3, stride=1, padding=0, dilation=1, groups=1, bias=True, transpose=False):
+        super(Conv2d, self).__init__()
+        module = nn.ConvTranspose2d if transpose else nn.Conv2d
+        self._layer = module(
+            dim_in, dim_out, kernel_size=ksize, stride=stride, padding=padding, dilation=dilation, groups=groups,
+            bias=bias
+        )
+
+    def forward(self, x):
+        return self._layer(x)
+
+class ConvNet(nn.Module):
+    def __init__(
+        self, hidden_dims, init_dim, strides, nonlinearity="softplus"):
+        super(ConvNet, self).__init__()
+
+        assert len(strides) == len(hidden_dims) + 1
+        base_layer = Conv2d 
+
+        # build layers and add them
+        layers = []
+        activation_fns = []
+        hidden_shape = init_dim
+
+        for dim_out, stride in zip(hidden_dims + (init_dim,), strides):
+            if stride is None:
+                layer_kwargs = {}
+            elif stride == 1:
+                layer_kwargs = {"ksize": 3, "stride": 1, "padding": 1, "transpose": False}
+            elif stride == 2:
+                layer_kwargs = {"ksize": 4, "stride": 2, "padding": 1, "transpose": False}
+            elif stride == -2:
+                layer_kwargs = {"ksize": 4, "stride": 2, "padding": 1, "transpose": True}
+            else:
+                raise ValueError('Unsupported stride: {}'.format(stride))
+
+            layer = base_layer(hidden_shape, dim_out, **layer_kwargs)
+            layers.append(layer)
+            activation_fns.append(NONLINEARITIES[nonlinearity])
+
+            hidden_shape = dim_out
+
+        self.layers = nn.ModuleList(layers)
+        self.activation_fns = nn.ModuleList(activation_fns[:-1])
+    
+    def forward(self, y):
+        dx = y
+        for l, layer in enumerate(self.layers):
+            dx = layer(dx)
+            # if not last layer, use nonlinearity
+            if l < len(self.layers) - 1:
+                dx = self.activation_fns[l](dx)
+        return dx 
+
 class ODENet(nn.Module):
 
     """
