@@ -159,3 +159,18 @@ class SigmoidTransform(nn.Module):
 def _sigmoid(x, alpha):
     y = (torch.sigmoid(x) - alpha) / (1 - alpha)
     return y
+
+class HiddenUnits(nn.Module):
+    def __init__(self, units):
+        super().__init__()
+
+        assert isinstance(units, list)
+
+        self.units = nn.ModuleList(units)
+
+    def forward(self, t, x):
+        dx = 0.0
+        for unit in self.units:
+            dx += unit(t, x)
+
+        return dx

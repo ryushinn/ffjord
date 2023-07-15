@@ -36,6 +36,9 @@ _converter = lambda s: tuple(map(int, s.split(",")))
 parser.add_argument("--dims", type=_converter, default="8,32,32,8")
 parser.add_argument("--strides", type=_converter, default="2,2,1,-2,-2")
 parser.add_argument("--num_blocks", type=int, default=1, help="Number of stacked CNFs.")
+parser.add_argument(
+    "--num_units", type=int, default=1, help="Number of hidden untis in the CNF"
+)
 
 parser.add_argument("--conv", type=eval, default=True, choices=[True, False])
 parser.add_argument(
@@ -130,7 +133,12 @@ if __name__ == "__main__":
     #     alpha=args.alpha,
     # )
     def make_ODETexture(init_dim):
-        odefunc = net.ODENet(args.dims, init_dim, args.strides, args.nonlinearity)
+        odefunc = net.HiddenUnits(
+            [
+                net.ODENet(args.dims, init_dim, args.strides, args.nonlinearity)
+                for _ in range(args.num_units)
+            ]
+        )
         return net.ODETexture(
             odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
         )
