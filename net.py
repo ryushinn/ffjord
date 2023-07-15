@@ -33,7 +33,7 @@ class Conv2d(nn.Module):
         module = nn.ConvTranspose2d if transpose else nn.Conv2d
         self._layer = module(
             dim_in, dim_out, kernel_size=ksize, stride=stride, padding=padding, dilation=dilation, groups=groups,
-            bias=bias
+            bias=bias, padding_mode="circular"
         )
 
     def forward(self, x):
