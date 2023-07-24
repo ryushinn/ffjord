@@ -33,35 +33,35 @@ parser.add_argument("--atol", type=float, default=1e-5)
 parser.add_argument("--rtol", type=float, default=1e-5)
 
 _converter = lambda s: tuple(map(int, s.split(",")))
-parser.add_argument("--dims", type=_converter, default="8,32,32,8")
-parser.add_argument("--strides", type=_converter, default="2,2,1,-2,-2")
-parser.add_argument("--num_blocks", type=int, default=1, help="Number of stacked CNFs.")
-parser.add_argument(
-    "--num_units", type=int, default=1, help="Number of hidden untis in the CNF"
-)
+parser.add_argument("--dims", type=_converter, default="64,128,256")
+# parser.add_argument("--strides", type=_converter, default="2,2,1,-2,-2")
+# parser.add_argument("--num_blocks", type=int, default=1, help="Number of stacked CNFs.")
+# parser.add_argument(
+#     "--num_units", type=int, default=1, help="Number of hidden untis in the CNF"
+# )
 
-parser.add_argument("--conv", type=eval, default=True, choices=[True, False])
-parser.add_argument(
-    "--layer_type",
-    type=str,
-    default="ignore",
-    choices=[
-        "ignore",
-        "concat",
-        "concat_v2",
-        "squash",
-        "concatsquash",
-        "concatcoord",
-        "hyper",
-        "blend",
-    ],
-)
-parser.add_argument(
-    "--nonlinearity",
-    type=str,
-    default="softplus",
-    choices=["tanh", "relu", "softplus", "elu", "swish"],
-)
+# parser.add_argument("--conv", type=eval, default=True, choices=[True, False])
+# parser.add_argument(
+#     "--layer_type",
+#     type=str,
+#     default="ignore",
+#     choices=[
+#         "ignore",
+#         "concat",
+#         "concat_v2",
+#         "squash",
+#         "concatsquash",
+#         "concatcoord",
+#         "hyper",
+#         "blend",
+#     ],
+# )
+# parser.add_argument(
+#     "--nonlinearity",
+#     type=str,
+#     default="softplus",
+#     choices=["tanh", "relu", "softplus", "elu", "swish"],
+# )
 
 parser.add_argument("--alpha", type=float, default=1e-6)
 parser.add_argument("--num_epochs", type=int, default=1000)
@@ -124,27 +124,11 @@ if __name__ == "__main__":
     exemplar = torch.unsqueeze(exemplar, 0)  # add the batch dim
 
     # model
-
-    # model = odenvp.ODENVP(
-    #     (args.batchsize, *data_shape),
-    #     n_blocks=args.num_blocks,
-    #     intermediate_dims=args.dims,
-    #     nonlinearity=args.nonlinearity,
-    #     alpha=args.alpha,
-    # )
-    def make_ODETexture(init_dim):
-        odefunc = net.HiddenUnits(
-            [
-                net.ODENet(args.dims, init_dim, args.strides, args.nonlinearity)
-                for _ in range(args.num_units)
-            ]
-        )
-        return net.ODETexture(
-            odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
-        )
-
     model = nn.Sequential(
-        *[make_ODETexture(data_shape[0]) for _ in range(args.num_blocks)],
+        net.ODETexture(
+            net.UNet(args.dims),
+            T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
+        ),
         net.SigmoidTransform(args.alpha),
     )
 

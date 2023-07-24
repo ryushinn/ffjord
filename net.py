@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from torchdiffeq import odeint_adjoint as odeint
+from diffusers import UNet2DModel
 
 NONLINEARITIES = {
     "tanh": nn.Tanh(),
@@ -160,6 +161,7 @@ def _sigmoid(x, alpha):
     y = (torch.sigmoid(x) - alpha) / (1 - alpha)
     return y
 
+
 class HiddenUnits(nn.Module):
     def __init__(self, units):
         super().__init__()
@@ -174,3 +176,35 @@ class HiddenUnits(nn.Module):
             dx += unit(t, x)
 
         return dx
+
+
+class UNet(nn.Module):
+    def __init__(self, channels, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+        down_block_types = tuple("DownBlock2D" for _ in range(len(channels)))
+        up_block_types = tuple("UpBlock2D" for _ in range(len(channels)))
+
+        self.network = UNet2DModel(
+            out_channels=3,
+            in_channels=3,
+
+            # arch
+            block_out_channels=channels,
+            up_block_types=up_block_types,
+            down_block_types=down_block_types,
+            layers_per_block=2,
+            add_attention=False,
+            
+            # time embedding
+            time_embedding_type="positional",
+            freq_shift=0,
+            flip_sin_to_cos=False,
+        )
+        
+        for module in self.network.modules():
+            if isinstance(module, nn.Conv2d):
+                module.padding_mode = "circular"
+
+    def forward(self, t, x):
+        return self.network(x, t)["sample"]
