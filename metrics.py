@@ -91,29 +91,29 @@ def SlicedWassersteinLoss(features1, features2):
 
     loss = 0.0
     for l1, l2 in zip(features1, features2):
-        b1, c1, h1, w1 = features1.size()
-        b2, c2, h2, w2 = features2.size()
+        b1, c1, h1, w1 = l1.size()
+        b2, c2, h2, w2 = l2.size()
         assert c1 == c2
 
-        features1 = features1.view(b1, c1, -1)
-        features2 = features2.view(b2, c2, -1)
+        l1 = l1.view(b1, c1, -1)
+        l2 = l2.view(b2, c2, -1)
 
         # align the size
-        features1, features2 = align_size(features1, features2)
+        l1, l2 = align_size(l1, l2)
 
         # get c random directions
-        Vs = torch.randn(c1, c1).to(features1)
+        Vs = torch.randn(c1, c1).to(l1)
         Vs = Vs / torch.sqrt(torch.sum(Vs**2, dim=1, keepdim=True))
 
         # project
-        pfeatures1 = torch.einsum("bcn,mc->bnm", features1, Vs)
-        pfeatures2 = torch.einsum("bcn,mc->bnm", features2, Vs)
+        pl1 = torch.einsum("bcn,mc->bnm", l1, Vs)
+        pl2 = torch.einsum("bcn,mc->bnm", l2, Vs)
 
         # sort
-        spfeatures1 = torch.sort(pfeatures1, dim=2)[0]
-        spfeatures2 = torch.sort(pfeatures2, dim=2)[0]
+        spl1 = torch.sort(pl1, dim=2)[0]
+        spl2 = torch.sort(pl2, dim=2)[0]
 
         # MSE
-        loss += torch.mean((spfeatures1 - spfeatures2) ** 2)
+        loss += torch.mean((spl1 - spl2) ** 2)
 
     return loss
