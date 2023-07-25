@@ -83,6 +83,8 @@ def align_size(a, b):
             indices = torch.randint(0, n2, (n1 - n2,))
             b = torch.concat([b, b[:, :, indices]], dim=2)
 
+    assert a.size() == b.size()
+
     return a, b
 
 
@@ -90,30 +92,30 @@ def SlicedWassersteinLoss(features1, features2):
     assert len(features1) == len(features2)
 
     loss = 0.0
-    for l1, l2 in zip(features1, features2):
-        b1, c1, h1, w1 = l1.size()
-        b2, c2, h2, w2 = l2.size()
+    for f1, f2 in zip(features1, features2):
+        b1, c1, h1, w1 = f1.size()
+        b2, c2, h2, w2 = f2.size()
         assert c1 == c2
 
-        l1 = l1.view(b1, c1, -1)
-        l2 = l2.view(b2, c2, -1)
+        f1 = f1.view(b1, c1, -1)
+        f2 = f2.view(b2, c2, -1)
 
         # align the size
-        l1, l2 = align_size(l1, l2)
+        f1, f2 = align_size(f1, f2)
 
         # get c random directions
-        Vs = torch.randn(c1, c1).to(l1)
+        Vs = torch.randn(c1, c1).to(f1)
         Vs = Vs / torch.sqrt(torch.sum(Vs**2, dim=1, keepdim=True))
 
         # project
-        pl1 = torch.einsum("bcn,mc->bnm", l1, Vs)
-        pl2 = torch.einsum("bcn,mc->bnm", l2, Vs)
+        pf1 = torch.einsum("bcn,mc->bnm", f1, Vs)
+        pf2 = torch.einsum("bcn,mc->bnm", f2, Vs)
 
         # sort
-        spl1 = torch.sort(pl1, dim=2)[0]
-        spl2 = torch.sort(pl2, dim=2)[0]
+        spf1 = torch.sort(pf1, dim=2)[0]
+        spf2 = torch.sort(pf2, dim=2)[0]
 
         # MSE
-        loss += torch.mean((spl1 - spl2) ** 2)
+        loss += torch.mean((spf1 - spf2) ** 2)
 
     return loss
