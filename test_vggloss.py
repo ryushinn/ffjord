@@ -12,7 +12,8 @@ import torch.optim as optim
 import torchvision.io as tvio
 import torchvision.datasets as dset
 import torchvision.transforms as tforms
-from torchvision.utils import save_image
+from torchvision.utils import save_image, make_grid
+from torch.utils.tensorboard import SummaryWriter
 
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -25,14 +26,16 @@ import lib.utils as utils
 import lib.odenvp as odenvp
 import lib.multiscale_parallel as multiscale_parallel
 
-parser = argparse.ArgumentParser("ODE texture")
+parser = argparse.ArgumentParser("ODE texture direct")
 
 parser.add_argument("--exemplar_path", type=str)
 parser.add_argument("--exp_path", type=str)
 parser.add_argument("--lr", type=float, default=1e-4)
 
-parser.add_argument("--num_epochs", type=int, default=1000)
-parser.add_argument("--num_disp_epochs", type=int, default=10)
+parser.add_argument("--num_epochs", type=int, default=50000)
+parser.add_argument("--num_disp_epochs", type=int, default=500)
+parser.add_argument("--comment", type=str, default="")
+
 # args
 args = parser.parse_args()
 
@@ -62,8 +65,8 @@ if __name__ == "__main__":
 
     ## create workspace to store results
     workspace = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    ws_path = opath.join(args.exp_path, workspace)
-    os.makedirs(ws_path, exist_ok=True)
+    ws_path = opath.join(args.exp_path, workspace) + args.comment
+    writer = SummaryWriter(log_dir=ws_path)
 
     read_tforms = [
         # tforms.RandomCrop(128),
@@ -75,10 +78,7 @@ if __name__ == "__main__":
         exemplar = tform(exemplar)
 
     ## write transformed exemplar
-    tvio.write_png(
-        tforms.ConvertImageDtype(torch.uint8)(exemplar),
-        opath.join(ws_path, "exemplar.png"),
-    )
+    writer.add_image("exemplar.png", exemplar)
 
     exemplar = cvt(exemplar)
     data_shape = exemplar.size()
@@ -86,7 +86,7 @@ if __name__ == "__main__":
 
     # model
 
-    noise = torch.randn(1, 3, 256, 256).to(device)
+    noise = torch.randn(1, 3, 512, 512).to(device)
     noise.requires_grad_(True)
     # training preconfig
 
@@ -96,7 +96,6 @@ if __name__ == "__main__":
     loss_fn = nn.MSELoss(reduction="mean")
 
     optimizer = optim.Adam([noise], lr=args.lr)
-    loss_meter = utils.RunningAverageMeter(0.97)
 
     # training procedure
     with tqdm(total=args.num_epochs, desc="Epoch") as t:
@@ -117,15 +116,13 @@ if __name__ == "__main__":
 
             optimizer.step()
 
-            loss_meter.update(loss.item())
+            writer.add_scalar("training_loss", loss.item(), ep)
 
             if ep % args.num_disp_epochs == 0:
                 with torch.no_grad():
-                    tvio.write_png(
-                        tforms.ConvertImageDtype(torch.uint8)(torch.sigmoid(noise)[0].to('cpu')),
-                        opath.join(ws_path, f"noise_{ep}.png"),
+                    writer.add_image(
+                        "optimized_noise", make_grid(torch.sigmoid(noise), nrow=3), ep
                     )
 
-            t.set_postfix({"running_loss": f"{loss_meter.avg}"})
             t.update()
             ## test in some period

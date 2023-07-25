@@ -188,22 +188,20 @@ class UNet(nn.Module):
         self.network = UNet2DModel(
             out_channels=3,
             in_channels=3,
-
             # arch
             block_out_channels=channels,
             up_block_types=up_block_types,
             down_block_types=down_block_types,
             layers_per_block=2,
-            add_attention=False,
-            
+            add_attention=True,
             # time embedding
             time_embedding_type="positional",
             freq_shift=0,
             flip_sin_to_cos=False,
         )
-        
+
         for module in self.network.modules():
-            if isinstance(module, nn.Conv2d):
+            if isinstance(module, nn.Conv2d) or isinstance(module, nn.ConvTranspose2d):
                 module.padding_mode = "circular"
 
     def forward(self, t, x):

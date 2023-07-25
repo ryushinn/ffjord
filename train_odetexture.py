@@ -12,7 +12,8 @@ import torch.optim as optim
 import torchvision.io as tvio
 import torchvision.datasets as dset
 import torchvision.transforms as tforms
-from torchvision.utils import save_image
+from torchvision.utils import make_grid
+from torch.utils.tensorboard import SummaryWriter
 
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -71,6 +72,7 @@ parser.add_argument("--lr", type=float, default=1e-4)
 
 parser.add_argument("--exemplar_path", type=str)
 parser.add_argument("--exp_path", type=str)
+parser.add_argument("--comment", type=str, default="")
 
 # args
 args = parser.parse_args()
@@ -101,8 +103,8 @@ if __name__ == "__main__":
 
     ## create workspace to store results
     workspace = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    ws_path = opath.join(args.exp_path, workspace)
-    os.makedirs(ws_path, exist_ok=True)
+    ws_path = opath.join(args.exp_path, workspace) + args.comment
+    writer = SummaryWriter(log_dir=ws_path)
 
     read_tforms = [
         # tforms.RandomCrop(128),
@@ -114,20 +116,17 @@ if __name__ == "__main__":
         exemplar = tform(exemplar)
 
     ## write transformed exemplar
-    tvio.write_png(
-        tforms.ConvertImageDtype(torch.uint8)(exemplar),
-        opath.join(ws_path, "exemplar.png"),
-    )
+    writer.add_image("exemplar.png", exemplar)
 
     exemplar = cvt(exemplar)
     data_shape = exemplar.size()
     exemplar = torch.unsqueeze(exemplar, 0)  # add the batch dim
 
     # model
+    odefunc = net.UNet(args.dims)
     model = nn.Sequential(
         net.ODETexture(
-            net.UNet(args.dims),
-            T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
+            odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
         ),
         net.SigmoidTransform(args.alpha),
     )
@@ -142,7 +141,6 @@ if __name__ == "__main__":
     loss_fn = nn.MSELoss(reduction="mean")
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    loss_meter = utils.RunningAverageMeter(0.97)
 
     n_test_tex = 3
     test_noise = torch.randn(n_test_tex, 3, 512, 512, device=device)
@@ -171,23 +169,18 @@ if __name__ == "__main__":
 
             optimizer.step()
 
-            loss_meter.update(loss.item())
+            writer.add_scalar("training_loss", loss.item(), ep)
 
+            ## test in some period
             if ep % args.num_disp_epochs == 0:
                 with torch.no_grad():
                     model.eval()
                     tex = model(test_noise).to("cpu")
-                    for i in range(n_test_tex):
-                        tvio.write_png(
-                            tforms.ConvertImageDtype(torch.uint8)(tex[i]),
-                            opath.join(ws_path, f"tex_{ep}_{i}.png"),
-                        )
+                    writer.add_image("test_tex", make_grid(tex, nrow=3), ep)
 
                 torch.save(
                     copy.deepcopy(model.state_dict()),
                     opath.join(ws_path, f"model_checkpoint.pth"),
                 )
 
-            t.set_postfix({"running_loss": f"{loss_meter.avg}"})
             t.update()
-            ## test in some period
