@@ -63,7 +63,7 @@ def GramMatrix(input):
     return gram_matrix
 
 
-def align_size(a, b):
+def align_size(a: torch.Tensor, b: torch.Tensor):
     b1, c, n1 = a.size()
     b2, c, n2 = b.size()
 
@@ -77,10 +77,12 @@ def align_size(a, b):
 
     if n1 != n2:
         if n1 < n2:
-            indices = torch.randint(0, n1, (n2 - n1,))
+            a = a.repeat(1, 1, n2 // n1)
+            indices = torch.randint(0, n1, (n2 % n1,))
             a = torch.concat([a, a[:, :, indices]], dim=2)
         else:
-            indices = torch.randint(0, n2, (n1 - n2,))
+            b = b.repeat(1, 1, n1 // n2)
+            indices = torch.randint(0, n2, (n1 % n2,))
             b = torch.concat([b, b[:, :, indices]], dim=2)
 
     assert a.size() == b.size()
