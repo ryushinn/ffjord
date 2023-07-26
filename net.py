@@ -222,14 +222,14 @@ def get_kernel(size=5, channels=3):
     return k2d
 
 
-downsample = nn.AvgPool2d(2, 2) 
+downsample = nn.AvgPool2d(2, 2)
 upsample = nn.Upsample(scale_factor=2)
 
 
 def encoder(
     x: torch.Tensor,
     num_levels: int = 3,
-) ->tuple[torch.Tensor]:
+) -> tuple[torch.Tensor]:
     # the size of x is b, c, h, w
     assert len(x.size()) == 4, "the input tensor should be in (B, C, H, W) format"
 
@@ -261,10 +261,10 @@ def encoder(
         # append difference
         current_level = x_down
 
-        pyramid += (laplacian, )
+        pyramid += (laplacian,)
 
     # append the remainder
-    pyramid += (current_level, )
+    pyramid += (current_level,)
 
     return pyramid
 
@@ -284,15 +284,14 @@ def compile(pyramid: tuple[torch.Tensor]) -> torch.Tensor:
     for i, laplacian in enumerate(pyramid):
         levels.append(nn.Upsample(scale_factor=2**i)(laplacian))
 
-    return torch.concat(levels, dim=1)    
+    return torch.concat(levels, dim=1)
 
 
-def decompile(x:torch.Tensor, channels=3) -> tuple[torch.Tensor]:
+def decompile(x: torch.Tensor, channels=3) -> tuple[torch.Tensor]:
     assert x.size(1) % channels == 0
 
-    levels = torch.chunk(x, x.size(1) // channels, dim=1)
+    levels = ()
+    for i, level in enumerate(torch.chunk(x, x.size(1) // channels, dim=1)):
+        levels += (nn.AvgPool2d(2**i, 2**i)(level),)
 
-    for i in range(len(levels)):
-        levels[i] = nn.AvgPool2d(2**i, 2**i)(levels[i])
-
-    return tuple(levels)
+    return levels
