@@ -193,7 +193,7 @@ class UNet(nn.Module):
             up_block_types=up_block_types,
             down_block_types=down_block_types,
             layers_per_block=2,
-            add_attention=True,
+            add_attention=False,
             # time embedding
             time_embedding_type="positional",
             freq_shift=0,
