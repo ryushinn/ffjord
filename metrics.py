@@ -26,13 +26,16 @@ class VGGFeatures(nn.Module):
         x = x.div(std)
 
         # get features
-        important_layers = [
-            1, 3, # block1_conv1, 2
-            6, 8, # block2_conv1, 2
-            11, 13, 15, 17, # block3_conv1, 2, 3, 4
-            20, 22, 24, 26, # block4_conv1, 2, 3, 4
-            29, 31, 33, 35, # block5_conv1, 2, 3, 4
-        ]
+
+        # important_layers = [
+        #     1, 3, # block1_conv1, 2
+        #     6, 8, # block2_conv1, 2
+        #     11, 13, 15, 17, # block3_conv1, 2, 3, 4
+        #     20, 22, 24, 26, # block4_conv1, 2, 3, 4
+        #     29, 31, 33, 35, # block5_conv1, 2, 3, 4
+        # ]
+        
+        important_layers = [3, 8, 17, 26, 35] # only the last conv of each block
 
         features_layers = []
         for i in range(len(self.features)):
