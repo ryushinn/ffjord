@@ -129,6 +129,7 @@ if __name__ == "__main__":
     loss_fn = nn.MSELoss(reduction="mean")
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=1000, eta_min=args.lr / 5)
 
     n_test_tex = 3
     test_noise_size = (512, 512)
@@ -172,6 +173,7 @@ if __name__ == "__main__":
             loss.backward()
 
             optimizer.step()
+            scheduler.step()
 
             writer.add_scalar("training_loss", loss.item(), ep)
 
@@ -184,7 +186,17 @@ if __name__ == "__main__":
 
                 torch.save(
                     copy.deepcopy(model.state_dict()),
-                    opath.join(ws_path, f"model_checkpoint.pth"),
+                    opath.join(ws_path, f"model_checkpoint.pth")
                 )
 
+                torch.save(
+                    copy.deepcopy(optimizer.state_dict()),
+                    opath.join(ws_path, f"optimizer_checkpoint.pth")
+                )
+
+                torch.save(
+                    copy.deepcopy(scheduler.state_dict()),
+                    opath.join(ws_path, f"scheduler_checkpoint.pth")
+                )
+                
             t.update()
