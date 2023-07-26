@@ -40,35 +40,13 @@ parser.add_argument("--dims", type=_converter, default="64,128,256")
 # parser.add_argument(
 #     "--num_units", type=int, default=1, help="Number of hidden untis in the CNF"
 # )
+parser.add_argument("--loss_type", type=str, choices=["GRAM", "SW"], default="GRAM")
 
-# parser.add_argument("--conv", type=eval, default=True, choices=[True, False])
-# parser.add_argument(
-#     "--layer_type",
-#     type=str,
-#     default="ignore",
-#     choices=[
-#         "ignore",
-#         "concat",
-#         "concat_v2",
-#         "squash",
-#         "concatsquash",
-#         "concatcoord",
-#         "hyper",
-#         "blend",
-#     ],
-# )
-# parser.add_argument(
-#     "--nonlinearity",
-#     type=str,
-#     default="softplus",
-#     choices=["tanh", "relu", "softplus", "elu", "swish"],
-# )
-
-parser.add_argument("--alpha", type=float, default=1e-6)
+parser.add_argument("--eps", type=float, default=1e-6)
 parser.add_argument("--num_epochs", type=int, default=1000)
 parser.add_argument("--num_disp_epochs", type=int, default=10)
-parser.add_argument("--batchsize", type=int, default=10)
-parser.add_argument("--lr", type=float, default=1e-4)
+parser.add_argument("--batchsize", type=int, default=1)
+parser.add_argument("--lr", type=float, default=5e-4)
 
 parser.add_argument("--exemplar_path", type=str)
 parser.add_argument("--exp_path", type=str)
@@ -128,7 +106,7 @@ if __name__ == "__main__":
         net.ODETexture(
             odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
         ),
-        net.SigmoidTransform(args.alpha),
+        net.SigmoidTransform(args.eps),
     )
 
     model = cvt(model)
@@ -137,7 +115,8 @@ if __name__ == "__main__":
 
     ## VGG features
     features = metrics.VGGFeatures().to(device)
-    gmatrices_exemplar = list(map(metrics.GramMatrix, features(exemplar)))
+    features_exemplar = features(exemplar)
+    gmatrices_exemplar = list(map(metrics.GramMatrix, features_exemplar))
     loss_fn = nn.MSELoss(reduction="mean")
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
@@ -156,14 +135,18 @@ if __name__ == "__main__":
             generated_textures = model(noise)
 
             ## compute gram matrices
+            features_samples = features(generated_textures)
             gmatrices_samples = list(
-                map(metrics.GramMatrix, features(generated_textures))
+                map(metrics.GramMatrix, features_samples)
             )
 
             ## compute the gradients
-            loss = 0.0
-            for gmatrix_e, gmatrix_s in zip(gmatrices_exemplar, gmatrices_samples):
-                loss += loss_fn(gmatrix_e.expand_as(gmatrix_s), gmatrix_s)
+            if args.loss_type == "GRAM":
+                loss = 0.0
+                for gmatrix_e, gmatrix_s in zip(gmatrices_exemplar, gmatrices_samples):
+                    loss += loss_fn(gmatrix_e.expand_as(gmatrix_s), gmatrix_s)
+            elif args.loss_type == "SW":
+                loss = metrics.SlicedWassersteinLoss(features_exemplar, features_samples)
 
             loss.backward()
 
