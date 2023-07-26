@@ -87,7 +87,7 @@ if __name__ == "__main__":
 
     # model
 
-    noise = torch.randn(1, 3, 512, 512).to(device)
+    noise = torch.logit(exemplar.mean((2, 3), keepdim=True) + 0.01 * torch.randn(1, 3, 512, 512).to(device))
     noise.requires_grad_(True)
     # training preconfig
 
