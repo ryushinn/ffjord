@@ -108,8 +108,8 @@ def SlicedWassersteinLoss(features1, features2):
         Vs = Vs / torch.sqrt(torch.sum(Vs**2, dim=1, keepdim=True))
 
         # project
-        pf1 = torch.einsum("bcn,mc->bnm", f1, Vs)
-        pf2 = torch.einsum("bcn,mc->bnm", f2, Vs)
+        pf1 = torch.einsum("bcn,mc->bmn", f1, Vs)
+        pf2 = torch.einsum("bcn,mc->bmn", f2, Vs)
 
         # sort
         spf1 = torch.sort(pf1, dim=2)[0]
