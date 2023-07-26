@@ -35,6 +35,7 @@ parser.add_argument("--lr", type=float, default=1e-4)
 parser.add_argument("--num_epochs", type=int, default=50000)
 parser.add_argument("--num_disp_epochs", type=int, default=500)
 parser.add_argument("--comment", type=str, default="")
+parser.add_argument("--loss_type", type=str, choices=["GRAM", "SW"], default="GRAM")
 
 # args
 args = parser.parse_args()
@@ -92,7 +93,8 @@ if __name__ == "__main__":
 
     ## VGG features
     features = metrics.VGGFeatures().to(device)
-    gmatrices_exemplar = list(map(metrics.GramMatrix, features(exemplar)))
+    features_exemplar = features(exemplar)
+    gmatrices_exemplar = list(map(metrics.GramMatrix, features_exemplar))
     loss_fn = nn.MSELoss(reduction="mean")
 
     optimizer = optim.Adam([noise], lr=args.lr)
@@ -103,14 +105,16 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             ## compute gram matrices
-            gmatrices_samples = list(
-                map(metrics.GramMatrix, features(torch.sigmoid(noise)))
-            )
+            features_noise = features(torch.sigmoid(noise))
+            gmatrices_samples = list(map(metrics.GramMatrix, features_noise))
 
             ## compute the gradients
-            loss = 0.0
-            for gmatrix_e, gmatrix_s in zip(gmatrices_exemplar, gmatrices_samples):
-                loss += loss_fn(gmatrix_e.expand_as(gmatrix_s), gmatrix_s)
+            if args.loss_type == 'GRAM':
+                loss = 0.0
+                for gmatrix_e, gmatrix_s in zip(gmatrices_exemplar, gmatrices_samples):
+                    loss += loss_fn(gmatrix_e.expand_as(gmatrix_s), gmatrix_s)
+            elif args.loss_type == 'SW':
+                loss = metrics.SlicedWassersteinLoss(features_exemplar, features_noise)
 
             loss.backward()
 
