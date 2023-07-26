@@ -206,3 +206,93 @@ class UNet(nn.Module):
 
     def forward(self, t, x):
         return self.network(x, t)["sample"]
+
+
+def get_kernel(size=5, channels=3):
+    # TODO: real kernel size
+    assert size % 2 == 1, "kernel size must be odd!"
+
+    k1d = torch.tensor([1, 4, 6, 4, 1])
+    k2d = torch.outer(k1d, k1d)
+    k2d = k2d / k2d.sum()
+
+    k2d = k2d[None, None, :, :].repeat(channels, 1, 1, 1)
+
+    assert k2d.size() == (channels, 1, size, size)
+    return k2d
+
+
+downsample = nn.AvgPool2d(2, 2) 
+upsample = nn.Upsample(scale_factor=2)
+
+
+def encoder(
+    x: torch.Tensor,
+    num_levels: int = 3,
+) ->tuple[torch.Tensor]:
+    # the size of x is b, c, h, w
+    assert len(x.size()) == 4, "the input tensor should be in (B, C, H, W) format"
+
+    ksize = 5
+    kernel = get_kernel(ksize, x.size(1)).to(x)
+    padding = ksize // 2
+
+    pyramid = ()
+    current_level = x
+    for i in range(num_levels):
+        # gaussian filter x
+        x_blur = F.conv2d(
+            F.pad(current_level, (padding,) * 4, mode="circular"),
+            kernel,
+            stride=1,
+            padding=0,
+            groups=x.size(1),
+        )
+
+        # downsample x
+        x_down = downsample(x_blur)
+
+        # upsample x
+        x_up = upsample(x_down)
+
+        # compute the difference
+        laplacian = current_level - x_up
+
+        # append difference
+        current_level = x_down
+
+        pyramid += (laplacian, )
+
+    # append the remainder
+    pyramid += (current_level, )
+
+    return pyramid
+
+
+def decoder(pyramid: tuple[torch.Tensor]) -> torch.Tensor:
+    current_level = pyramid[-1]
+
+    for level in reversed(pyramid[:-1]):
+        current_level = upsample(current_level)
+        current_level += level
+
+    return current_level
+
+
+def compile(pyramid: tuple[torch.Tensor]) -> torch.Tensor:
+    levels = []
+    for i, laplacian in enumerate(pyramid):
+        levels.append(nn.Upsample(scale_factor=2**i)(laplacian))
+
+    return torch.concat(levels, dim=1)    
+
+
+def decompile(x:torch.Tensor, channels=3) -> tuple[torch.Tensor]:
+    assert x.size(1) % channels == 0
+
+    levels = torch.chunk(x, x.size(1) // channels, dim=1)
+
+    for i in range(len(levels)):
+        levels[i] = nn.AvgPool2d(2**i, 2**i)(levels[i])
+
+    return tuple(levels)
