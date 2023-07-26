@@ -179,15 +179,15 @@ class HiddenUnits(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, channels, *args, **kwargs) -> None:
+    def __init__(self, inout_channels, channels, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
         down_block_types = tuple("DownBlock2D" for _ in range(len(channels)))
         up_block_types = tuple("UpBlock2D" for _ in range(len(channels)))
 
         self.network = UNet2DModel(
-            out_channels=3,
-            in_channels=3,
+            out_channels=inout_channels,
+            in_channels=inout_channels,
             # arch
             block_out_channels=channels,
             up_block_types=up_block_types,
@@ -222,8 +222,44 @@ def get_kernel(size=5, channels=3):
     return k2d
 
 
+class Lambda(nn.Module):
+    def __init__(self, func):
+        super().__init__()
+        self.func = func
+
+    def forward(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+
+
 downsample = nn.AvgPool2d(2, 2)
 upsample = nn.Upsample(scale_factor=2)
+
+
+def rand_pyramid(size: list[int], num_layers, device):
+    b, c, h, w = size
+
+    pyramid = ()
+    for i in range(num_layers):
+        pyramid += (
+            torch.randn(
+                b,
+                c,
+                h // (2**i),
+                w // (2**i),
+                device=device,
+            ),
+        )
+    pyramid += (
+        torch.randn(
+            b,
+            c,
+            h // (2**num_layers),
+            w // (2**num_layers),
+            device=device,
+        ),
+    )
+
+    return pyramid
 
 
 def encoder(

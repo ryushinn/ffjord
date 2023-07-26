@@ -35,11 +35,8 @@ parser.add_argument("--rtol", type=float, default=1e-5)
 
 _converter = lambda s: tuple(map(int, s.split(",")))
 parser.add_argument("--dims", type=_converter, default="64,128,256")
-# parser.add_argument("--strides", type=_converter, default="2,2,1,-2,-2")
-# parser.add_argument("--num_blocks", type=int, default=1, help="Number of stacked CNFs.")
-# parser.add_argument(
-#     "--num_units", type=int, default=1, help="Number of hidden untis in the CNF"
-# )
+parser.add_argument("--LDM", action="store_true")
+parser.add_argument("--num_layers", type=int, default=3, required=False)
 parser.add_argument("--loss_type", type=str, choices=["GRAM", "SW"], default="GRAM")
 
 parser.add_argument("--eps", type=float, default=1e-6)
@@ -101,13 +98,25 @@ if __name__ == "__main__":
     exemplar = torch.unsqueeze(exemplar, 0)  # add the batch dim
 
     # model
-    odefunc = net.UNet(args.dims)
-    model = nn.Sequential(
-        net.ODETexture(
-            odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
-        ),
-        net.SigmoidTransform(args.eps),
-    )
+    if args.LDM:
+        odefunc = net.UNet(inout_channels=3 * (args.num_layers + 1), channels=args.dims)
+        model = nn.Sequential(
+            net.Lambda(net.compile),
+            net.ODETexture(
+                odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
+            ),
+            net.Lambda(net.decompile),
+            net.Lambda(net.decoder),
+            net.SigmoidTransform(args.eps),
+        )
+    else:
+        odefunc = net.UNet(inout_channels=3, channels=args.dims)
+        model = nn.Sequential(
+            net.ODETexture(
+                odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
+            ),
+            net.SigmoidTransform(args.eps),
+        )
 
     model = cvt(model)
 
@@ -122,8 +131,15 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     n_test_tex = 3
-    test_noise = torch.randn(n_test_tex, 3, 512, 512, device=device)
+    test_noise_size = (512, 512)
+    if args.LDM:
+        test_noise = net.rand_pyramid(
+            [n_test_tex, 3, *test_noise_size], args.num_layers, device
+        )
+    else:
+        test_noise = torch.randn(n_test_tex, 3, *test_noise_size, device=device)
 
+    noise_size = (256, 256)
     # training procedure
     with tqdm(total=args.num_epochs, desc="Epoch") as t:
         for ep in range(args.num_epochs):
@@ -131,14 +147,17 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             ## generate some textures
-            noise = torch.randn(args.batchsize, 3, 256, 256, device=device)
+            if args.LDM:
+                noise = net.rand_pyramid(
+                    [args.batchsize, 3, *noise_size], args.num_layers, device
+                )
+            else:
+                noise = torch.randn(args.batchsize, 3, *noise_size, device=device)
             generated_textures = model(noise)
 
             ## compute gram matrices
             features_samples = features(generated_textures)
-            gmatrices_samples = list(
-                map(metrics.GramMatrix, features_samples)
-            )
+            gmatrices_samples = list(map(metrics.GramMatrix, features_samples))
 
             ## compute the gradients
             if args.loss_type == "GRAM":
@@ -146,7 +165,9 @@ if __name__ == "__main__":
                 for gmatrix_e, gmatrix_s in zip(gmatrices_exemplar, gmatrices_samples):
                     loss += loss_fn(gmatrix_e.expand_as(gmatrix_s), gmatrix_s)
             elif args.loss_type == "SW":
-                loss = metrics.SlicedWassersteinLoss(features_exemplar, features_samples)
+                loss = metrics.SlicedWassersteinLoss(
+                    features_exemplar, features_samples
+                )
 
             loss.backward()
 
