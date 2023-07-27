@@ -25,7 +25,6 @@ import lib.layers as layers
 import lib.utils as utils
 import lib.odenvp as odenvp
 import lib.multiscale_parallel as multiscale_parallel
-import file
 
 parser = argparse.ArgumentParser("ODE texture")
 
