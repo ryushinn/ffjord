@@ -94,9 +94,8 @@ if __name__ == "__main__":
     ## VGG features
     # features = metrics.VGGFeatures().to(device)
     features = metrics.VGG19().to(device)
-    for p in features.parameters():
-        p.requires_grad_(False)
     features.load_state_dict(torch.load("vgg19.pth"))
+    
     features_exemplar = features(exemplar)
     gmatrices_exemplar = list(map(metrics.GramMatrix, features_exemplar))
     loss_fn = nn.MSELoss(reduction="mean")

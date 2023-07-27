@@ -26,6 +26,9 @@ class VGG19(torch.nn.Module):
 
         self.relu = torch.nn.ReLU(inplace=True)
         self.downsampling = torch.nn.AvgPool2d((2,2))
+        
+        for param in self.parameters():
+            param.requires_grad = False
 
     def forward(self, image):
         
@@ -79,13 +82,13 @@ class VGGFeatures(nn.Module):
 
     def forward(self, x):
         ## normalize
-        # mean = [0.485, 0.456, 0.406]
-        # std = [0.229, 0.224, 0.225]
-        # device = "cuda" if x.is_cuda else "cpu"
-        # mean = torch.as_tensor(mean, device=device).view(1, 3, 1, 1)
-        # std = torch.as_tensor(std, device=device).view(1, 3, 1, 1)
-        # x = x.sub(mean)
-        # x = x.div(std)
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+        device = "cuda" if x.is_cuda else "cpu"
+        mean = torch.as_tensor(mean, device=device).view(1, 3, 1, 1)
+        std = torch.as_tensor(std, device=device).view(1, 3, 1, 1)
+        x = x.sub(mean)
+        x = x.div(std)
 
         # get features
 
