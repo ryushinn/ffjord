@@ -92,35 +92,43 @@ if __name__ == "__main__":
     # training preconfig
 
     ## VGG features
-    features = metrics.VGGFeatures().to(device)
+    # features = metrics.VGGFeatures().to(device)
+    features = metrics.VGG19().to(device)
+    for p in features.parameters():
+        p.requires_grad_(False)
+    features.load_state_dict(torch.load("vgg19.pth"))
     features_exemplar = features(exemplar)
     gmatrices_exemplar = list(map(metrics.GramMatrix, features_exemplar))
     loss_fn = nn.MSELoss(reduction="mean")
 
-    optimizer = optim.Adam([noise], lr=args.lr)
+    optimizer = optim.LBFGS([noise], lr=args.lr, max_iter=64, tolerance_grad=0.0)
 
+    loss_indicator = 0.0
+    def closure():
+        optimizer.zero_grad()
+
+        ## compute gram matrices
+        features_noise = features(torch.sigmoid(noise))
+        gmatrices_samples = list(map(metrics.GramMatrix, features_noise))
+
+        loss = 0.0
+        ## compute the gradients
+        if args.loss_type == 'GRAM':
+            for gmatrix_e, gmatrix_s in zip(gmatrices_exemplar, gmatrices_samples):
+                loss += loss_fn(gmatrix_e.expand_as(gmatrix_s), gmatrix_s)
+        elif args.loss_type == 'SW':
+            loss = metrics.SlicedWassersteinLoss(features_exemplar, features_noise)
+        loss.backward()
+        global loss_indicator
+        loss_indicator = loss.item()
+        return loss
+    
     # training procedure
     with tqdm(total=args.num_epochs, desc="Epoch") as t:
         for ep in range(args.num_epochs):
-            optimizer.zero_grad()
+            optimizer.step(closure)
 
-            ## compute gram matrices
-            features_noise = features(torch.sigmoid(noise))
-            gmatrices_samples = list(map(metrics.GramMatrix, features_noise))
-
-            ## compute the gradients
-            if args.loss_type == 'GRAM':
-                loss = 0.0
-                for gmatrix_e, gmatrix_s in zip(gmatrices_exemplar, gmatrices_samples):
-                    loss += loss_fn(gmatrix_e.expand_as(gmatrix_s), gmatrix_s)
-            elif args.loss_type == 'SW':
-                loss = metrics.SlicedWassersteinLoss(features_exemplar, features_noise)
-
-            loss.backward()
-
-            optimizer.step()
-
-            writer.add_scalar("training_loss", loss.item(), ep)
+            writer.add_scalar("training_loss", loss_indicator, ep)
 
             if ep % args.num_disp_epochs == 0:
                 with torch.no_grad():
