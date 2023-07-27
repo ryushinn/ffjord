@@ -25,6 +25,7 @@ import lib.layers as layers
 import lib.utils as utils
 import lib.odenvp as odenvp
 import lib.multiscale_parallel as multiscale_parallel
+import file
 
 parser = argparse.ArgumentParser("ODE texture")
 
@@ -42,7 +43,7 @@ parser.add_argument("--loss_type", type=str, choices=["GRAM", "SW"], default="GR
 parser.add_argument("--eps", type=float, default=1e-6)
 parser.add_argument("--num_epochs", type=int, default=1000)
 parser.add_argument("--num_disp_epochs", type=int, default=10)
-parser.add_argument("--batchsize", type=int, default=1)
+parser.add_argument("--batchsize", type=int, default=10)
 parser.add_argument("--lr", type=float, default=5e-4)
 
 parser.add_argument("--exemplar_path", type=str)
@@ -80,6 +81,8 @@ if __name__ == "__main__":
     workspace = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     ws_path = opath.join(args.exp_path, workspace) + args.comment
     writer = SummaryWriter(log_dir=ws_path)
+    writer.add_text("arguments", f"{vars(args)}")
+    writer.add_text("file content", f"{open(__file__, 'r').read()}")
 
     read_tforms = [
         # tforms.RandomCrop(128),
@@ -132,7 +135,9 @@ if __name__ == "__main__":
     loss_fn = nn.MSELoss(reduction="mean")
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=1000, eta_min=args.lr / 5)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=args.num_epochs // 5, eta_min=args.lr / 5
+    )
 
     n_test_tex = 3
     test_noise_size = (512, 512)
@@ -189,17 +194,17 @@ if __name__ == "__main__":
 
                 torch.save(
                     copy.deepcopy(model.state_dict()),
-                    opath.join(ws_path, f"model_checkpoint.pth")
+                    opath.join(ws_path, f"model_checkpoint.pth"),
                 )
 
                 torch.save(
                     copy.deepcopy(optimizer.state_dict()),
-                    opath.join(ws_path, f"optimizer_checkpoint.pth")
+                    opath.join(ws_path, f"optimizer_checkpoint.pth"),
                 )
 
                 torch.save(
                     copy.deepcopy(scheduler.state_dict()),
-                    opath.join(ws_path, f"scheduler_checkpoint.pth")
+                    opath.join(ws_path, f"scheduler_checkpoint.pth"),
                 )
-                
+
             t.update()
