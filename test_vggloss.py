@@ -30,10 +30,10 @@ parser = argparse.ArgumentParser("ODE texture direct")
 
 parser.add_argument("--exemplar_path", type=str)
 parser.add_argument("--exp_path", type=str)
-parser.add_argument("--lr", type=float, default=1e-4)
+parser.add_argument("--lr", type=float, default=1)
 
-parser.add_argument("--num_epochs", type=int, default=50000)
-parser.add_argument("--num_disp_epochs", type=int, default=500)
+parser.add_argument("--num_epochs", type=int, default=64)
+parser.add_argument("--num_disp_epochs", type=int, default=1)
 parser.add_argument("--comment", type=str, default="")
 parser.add_argument("--loss_type", type=str, choices=["GRAM", "SW"], default="GRAM")
 
