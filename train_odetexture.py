@@ -100,26 +100,26 @@ if __name__ == "__main__":
     exemplar = torch.unsqueeze(exemplar, 0)  # add the batch dim
 
     # model
-    if args.LDM:
-        odefunc = net.UNet(inout_channels=3 * (args.num_layers + 1), channels=args.dims)
-        model = nn.Sequential(
-            net.Lambda(net.compile),
-            net.ODETexture(
-                odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
-            ),
-            net.Lambda(net.decompile),
-            net.Lambda(net.decoder),
-            net.SigmoidTransform(args.eps),
-        )
-    else:
-        odefunc = net.UNet(inout_channels=3, channels=args.dims)
-        model = nn.Sequential(
-            net.ODETexture(
-                odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
-            ),
-            net.SigmoidTransform(args.eps),
-        )
-
+    # if args.LDM:
+    #     odefunc = net.UNet(inout_channels=3 * (args.num_layers + 1), channels=args.dims)
+    #     model = nn.Sequential(
+    #         net.Lambda(net.compile),
+    #         net.ODETexture(
+    #             odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
+    #         ),
+    #         net.Lambda(net.decompile),
+    #         net.Lambda(net.decoder),
+    #         net.SigmoidTransform(args.eps),
+    #     )
+    # else:
+    #     odefunc = net.UNet(inout_channels=3, channels=args.dims)
+    #     model = nn.Sequential(
+    #         net.ODETexture(
+    #             odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
+    #         ),
+    #         net.SigmoidTransform(args.eps),
+    #     )
+    model = net.UNet(inout_channels=3, channels=args.dims)
     model = cvt(model)
 
     # training preconfig
@@ -161,7 +161,7 @@ if __name__ == "__main__":
                 )
             else:
                 noise = torch.randn(args.batchsize, 3, *noise_size, device=device)
-            generated_textures = model(noise)
+            generated_textures = model(0.0, noise)
 
             ## compute gram matrices
             features_samples = features(generated_textures)
@@ -188,7 +188,7 @@ if __name__ == "__main__":
             if ep % args.num_disp_epochs == 0:
                 with torch.no_grad():
                     model.eval()
-                    tex = model(test_noise).to("cpu")
+                    tex = model(0.0, test_noise).to("cpu")
                     writer.add_image("test_tex", make_grid(tex, nrow=3), ep)
 
                 torch.save(
