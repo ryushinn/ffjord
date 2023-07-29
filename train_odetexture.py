@@ -12,7 +12,8 @@ import torch.optim as optim
 import torchvision.io as tvio
 import torchvision.datasets as dset
 import torchvision.transforms as tforms
-from torchvision.utils import save_image
+from torchvision.utils import make_grid
+from torch.utils.tensorboard import SummaryWriter
 
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -33,44 +34,20 @@ parser.add_argument("--atol", type=float, default=1e-5)
 parser.add_argument("--rtol", type=float, default=1e-5)
 
 _converter = lambda s: tuple(map(int, s.split(",")))
-parser.add_argument("--dims", type=_converter, default="8,32,32,8")
-parser.add_argument("--strides", type=_converter, default="2,2,1,-2,-2")
-parser.add_argument("--num_blocks", type=int, default=1, help="Number of stacked CNFs.")
-parser.add_argument(
-    "--num_units", type=int, default=1, help="Number of hidden untis in the CNF"
-)
+parser.add_argument("--dims", type=_converter, default="64,128,256")
+parser.add_argument("--LDM", action="store_true")
+parser.add_argument("--num_layers", type=int, default=3, required=False)
+parser.add_argument("--loss_type", type=str, choices=["GRAM", "SW"], default="GRAM")
 
-parser.add_argument("--conv", type=eval, default=True, choices=[True, False])
-parser.add_argument(
-    "--layer_type",
-    type=str,
-    default="ignore",
-    choices=[
-        "ignore",
-        "concat",
-        "concat_v2",
-        "squash",
-        "concatsquash",
-        "concatcoord",
-        "hyper",
-        "blend",
-    ],
-)
-parser.add_argument(
-    "--nonlinearity",
-    type=str,
-    default="softplus",
-    choices=["tanh", "relu", "softplus", "elu", "swish"],
-)
-
-parser.add_argument("--alpha", type=float, default=1e-6)
+parser.add_argument("--eps", type=float, default=1e-6)
 parser.add_argument("--num_epochs", type=int, default=1000)
 parser.add_argument("--num_disp_epochs", type=int, default=10)
 parser.add_argument("--batchsize", type=int, default=10)
-parser.add_argument("--lr", type=float, default=1e-4)
+parser.add_argument("--lr", type=float, default=5e-4)
 
 parser.add_argument("--exemplar_path", type=str)
 parser.add_argument("--exp_path", type=str)
+parser.add_argument("--comment", type=str, default="")
 
 # args
 args = parser.parse_args()
@@ -101,8 +78,10 @@ if __name__ == "__main__":
 
     ## create workspace to store results
     workspace = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    ws_path = opath.join(args.exp_path, workspace)
-    os.makedirs(ws_path, exist_ok=True)
+    ws_path = opath.join(args.exp_path, workspace) + args.comment
+    writer = SummaryWriter(log_dir=ws_path)
+    writer.add_text("arguments", f"{vars(args)}")
+    writer.add_text("file content", f"{open(__file__, 'r').read()}")
 
     read_tforms = [
         # tforms.RandomCrop(128),
@@ -114,60 +93,61 @@ if __name__ == "__main__":
         exemplar = tform(exemplar)
 
     ## write transformed exemplar
-    tvio.write_png(
-        tforms.ConvertImageDtype(torch.uint8)(exemplar),
-        opath.join(ws_path, "exemplar.png"),
-    )
+    writer.add_image("exemplar.png", exemplar)
 
     exemplar = cvt(exemplar)
     data_shape = exemplar.size()
     exemplar = torch.unsqueeze(exemplar, 0)  # add the batch dim
 
     # model
-
-    # model = odenvp.ODENVP(
-    #     (args.batchsize, *data_shape),
-    #     n_blocks=args.num_blocks,
-    #     intermediate_dims=args.dims,
-    #     nonlinearity=args.nonlinearity,
-    #     alpha=args.alpha,
-    # )
-    # def make_ODETexture(init_dim):
-    #     odefunc = net.HiddenUnits(
-    #         [
-    #             net.ODENet(args.dims, init_dim, args.strides, args.nonlinearity)
-    #             for _ in range(args.num_units)
-    #         ]
-    #     )
-    #     return net.ODETexture(
-    #         odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
-    #     )
-
-    # model = nn.Sequential(
-    #     *[make_ODETexture(data_shape[0]) for _ in range(args.num_blocks)],
-    #     net.SigmoidTransform(args.alpha),
-    # )
-
-    model = nn.Sequential(
-        net.ConvNet(args.dims, data_shape[0], args.strides, args.nonlinearity),
-        net.SigmoidTransform(args.alpha)
-    )
+    if args.LDM:
+        odefunc = net.UNet(inout_channels=3 * (args.num_layers + 1), channels=args.dims)
+        model = nn.Sequential(
+            net.Lambda(net.compile),
+            net.ODETexture(
+                odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
+            ),
+            net.Lambda(net.decompile),
+            net.Lambda(net.decoder),
+            net.SigmoidTransform(args.eps),
+        )
+    else:
+        odefunc = net.UNet(inout_channels=3, channels=args.dims)
+        model = nn.Sequential(
+            net.ODETexture(
+                odefunc, T=1, solver=args.solver, atol=args.atol, rtol=args.rtol
+            ),
+            net.SigmoidTransform(args.eps),
+        )
 
     model = cvt(model)
 
     # training preconfig
 
     ## VGG features
-    features = metrics.VGGFeatures().to(device)
-    gmatrices_exemplar = list(map(metrics.GramMatrix, features(exemplar)))
+    # features = metrics.VGGFeatures().to(device)
+    features = metrics.VGG19().to(device)
+    features.load_state_dict(torch.load("vgg19.pth"))
+
+    features_exemplar = features(exemplar)
+    gmatrices_exemplar = list(map(metrics.GramMatrix, features_exemplar))
     loss_fn = nn.MSELoss(reduction="mean")
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    loss_meter = utils.RunningAverageMeter(0.97)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=args.num_epochs // 5, eta_min=args.lr / 5
+    )
 
     n_test_tex = 3
-    test_noise = torch.randn(n_test_tex, 3, 512, 512, device=device)
+    test_noise_size = (512, 512)
+    if args.LDM:
+        test_noise = net.rand_pyramid(
+            [n_test_tex, 3, *test_noise_size], args.num_layers, device
+        )
+    else:
+        test_noise = torch.randn(n_test_tex, 3, *test_noise_size, device=device)
 
+    noise_size = (256, 256)
     # training procedure
     with tqdm(total=args.num_epochs, desc="Epoch") as t:
         for ep in range(args.num_epochs):
@@ -175,40 +155,55 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             ## generate some textures
-            noise = torch.randn(args.batchsize, 3, 256, 256, device=device)
+            if args.LDM:
+                noise = net.rand_pyramid(
+                    [args.batchsize, 3, *noise_size], args.num_layers, device
+                )
+            else:
+                noise = torch.randn(args.batchsize, 3, *noise_size, device=device)
             generated_textures = model(noise)
 
             ## compute gram matrices
-            gmatrices_samples = list(
-                map(metrics.GramMatrix, features(generated_textures))
-            )
+            features_samples = features(generated_textures)
+            gmatrices_samples = list(map(metrics.GramMatrix, features_samples))
 
             ## compute the gradients
-            loss = 0.0
-            for gmatrix_e, gmatrix_s in zip(gmatrices_exemplar, gmatrices_samples):
-                loss += loss_fn(gmatrix_e.expand_as(gmatrix_s), gmatrix_s)
+            if args.loss_type == "GRAM":
+                loss = 0.0
+                for gmatrix_e, gmatrix_s in zip(gmatrices_exemplar, gmatrices_samples):
+                    loss += loss_fn(gmatrix_e.expand_as(gmatrix_s), gmatrix_s)
+            elif args.loss_type == "SW":
+                loss = metrics.SlicedWassersteinLoss(
+                    features_exemplar, features_samples
+                )
 
             loss.backward()
 
             optimizer.step()
+            scheduler.step()
 
-            loss_meter.update(loss.item())
+            writer.add_scalar("training_loss", loss.item(), ep)
 
+            ## test in some period
             if ep % args.num_disp_epochs == 0:
                 with torch.no_grad():
                     model.eval()
                     tex = model(test_noise).to("cpu")
-                    for i in range(n_test_tex):
-                        tvio.write_png(
-                            tforms.ConvertImageDtype(torch.uint8)(tex[i]),
-                            opath.join(ws_path, f"tex_{ep}_{i}.png"),
-                        )
+                    writer.add_image("test_tex", make_grid(tex, nrow=3), ep)
 
                 torch.save(
                     copy.deepcopy(model.state_dict()),
                     opath.join(ws_path, f"model_checkpoint.pth"),
                 )
 
-            t.set_postfix({"running_loss": f"{loss_meter.avg}"})
+                torch.save(
+                    copy.deepcopy(optimizer.state_dict()),
+                    opath.join(ws_path, f"optimizer_checkpoint.pth"),
+                )
+
+                torch.save(
+                    copy.deepcopy(scheduler.state_dict()),
+                    opath.join(ws_path, f"scheduler_checkpoint.pth"),
+                )
+
             t.update()
-            ## test in some period

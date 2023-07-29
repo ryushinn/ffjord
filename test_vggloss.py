@@ -12,7 +12,8 @@ import torch.optim as optim
 import torchvision.io as tvio
 import torchvision.datasets as dset
 import torchvision.transforms as tforms
-from torchvision.utils import save_image
+from torchvision.utils import save_image, make_grid
+from torch.utils.tensorboard import SummaryWriter
 
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -25,14 +26,17 @@ import lib.utils as utils
 import lib.odenvp as odenvp
 import lib.multiscale_parallel as multiscale_parallel
 
-parser = argparse.ArgumentParser("ODE texture")
+parser = argparse.ArgumentParser("ODE texture direct")
 
 parser.add_argument("--exemplar_path", type=str)
 parser.add_argument("--exp_path", type=str)
-parser.add_argument("--lr", type=float, default=1e-4)
+parser.add_argument("--lr", type=float, default=1)
 
-parser.add_argument("--num_epochs", type=int, default=1000)
-parser.add_argument("--num_disp_epochs", type=int, default=10)
+parser.add_argument("--num_epochs", type=int, default=64)
+parser.add_argument("--num_disp_epochs", type=int, default=1)
+parser.add_argument("--comment", type=str, default="")
+parser.add_argument("--loss_type", type=str, choices=["GRAM", "SW"], default="GRAM")
+
 # args
 args = parser.parse_args()
 
@@ -62,8 +66,8 @@ if __name__ == "__main__":
 
     ## create workspace to store results
     workspace = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    ws_path = opath.join(args.exp_path, workspace)
-    os.makedirs(ws_path, exist_ok=True)
+    ws_path = opath.join(args.exp_path, workspace) + args.comment
+    writer = SummaryWriter(log_dir=ws_path)
 
     read_tforms = [
         # tforms.RandomCrop(128),
@@ -75,10 +79,7 @@ if __name__ == "__main__":
         exemplar = tform(exemplar)
 
     ## write transformed exemplar
-    tvio.write_png(
-        tforms.ConvertImageDtype(torch.uint8)(exemplar),
-        opath.join(ws_path, "exemplar.png"),
-    )
+    writer.add_image("exemplar.png", exemplar)
 
     exemplar = cvt(exemplar)
     data_shape = exemplar.size()
@@ -86,46 +87,53 @@ if __name__ == "__main__":
 
     # model
 
-    noise = torch.randn(1, 3, 256, 256).to(device)
+    noise = torch.logit(exemplar.mean((2, 3), keepdim=True) + 0.01 * torch.randn(1, 3, 512, 512).to(device))
     noise.requires_grad_(True)
     # training preconfig
 
     ## VGG features
-    features = metrics.VGGFeatures().to(device)
-    gmatrices_exemplar = list(map(metrics.GramMatrix, features(exemplar)))
+    # features = metrics.VGGFeatures().to(device)
+    features = metrics.VGG19().to(device)
+    features.load_state_dict(torch.load("vgg19.pth"))
+    
+    features_exemplar = features(exemplar)
+    gmatrices_exemplar = list(map(metrics.GramMatrix, features_exemplar))
     loss_fn = nn.MSELoss(reduction="mean")
 
-    optimizer = optim.Adam([noise], lr=args.lr)
-    loss_meter = utils.RunningAverageMeter(0.97)
+    optimizer = optim.LBFGS([noise], lr=args.lr, max_iter=64, tolerance_grad=0.0)
 
+    loss_indicator = 0.0
+    def closure():
+        optimizer.zero_grad()
+
+        ## compute gram matrices
+        features_noise = features(torch.sigmoid(noise))
+        gmatrices_samples = list(map(metrics.GramMatrix, features_noise))
+
+        loss = 0.0
+        ## compute the gradients
+        if args.loss_type == 'GRAM':
+            for gmatrix_e, gmatrix_s in zip(gmatrices_exemplar, gmatrices_samples):
+                loss += loss_fn(gmatrix_e.expand_as(gmatrix_s), gmatrix_s)
+        elif args.loss_type == 'SW':
+            loss = metrics.SlicedWassersteinLoss(features_exemplar, features_noise)
+        loss.backward()
+        global loss_indicator
+        loss_indicator = loss.item()
+        return loss
+    
     # training procedure
     with tqdm(total=args.num_epochs, desc="Epoch") as t:
         for ep in range(args.num_epochs):
-            optimizer.zero_grad()
+            optimizer.step(closure)
 
-            ## compute gram matrices
-            gmatrices_samples = list(
-                map(metrics.GramMatrix, features(torch.sigmoid(noise)))
-            )
-
-            ## compute the gradients
-            loss = 0.0
-            for gmatrix_e, gmatrix_s in zip(gmatrices_exemplar, gmatrices_samples):
-                loss += loss_fn(gmatrix_e.expand_as(gmatrix_s), gmatrix_s)
-
-            loss.backward()
-
-            optimizer.step()
-
-            loss_meter.update(loss.item())
+            writer.add_scalar("training_loss", loss_indicator, ep)
 
             if ep % args.num_disp_epochs == 0:
                 with torch.no_grad():
-                    tvio.write_png(
-                        tforms.ConvertImageDtype(torch.uint8)(torch.sigmoid(noise)[0].to('cpu')),
-                        opath.join(ws_path, f"noise_{ep}.png"),
+                    writer.add_image(
+                        "optimized_noise", make_grid(torch.sigmoid(noise), nrow=3), ep
                     )
 
-            t.set_postfix({"running_loss": f"{loss_meter.avg}"})
             t.update()
             ## test in some period
